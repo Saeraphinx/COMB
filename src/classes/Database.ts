@@ -2,7 +2,7 @@ import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, 
 import { Logger } from './Logger';
 import { EnvConfig } from './EnvConfig';
 import path from 'node:path';
-import { GuildMember } from 'discord.js';
+import { APIGuildMember, GuildMember } from 'discord.js';
 
 export class DatabaseManager {
     private sequelize: Sequelize;
@@ -105,29 +105,40 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
     declare roleId: string | null;
 
 
-    public static updateUser(member: GuildMember) {
-        if (!member.user.bot) {
+    public static async updateUser(member: GuildMember | APIGuildMember) {
+        if (member.user.bot) {
             return;
         }
 
         for (const roleWeight of EnvConfig.settings.roleWeights) {
-            if (member.roles.cache.has(roleWeight.roleId)) {
+            if (
+                (member instanceof GuildMember && member.roles.cache.has(roleWeight.roleId)) ||
+                (Array.isArray(member.roles) && member.roles.includes(roleWeight.roleId))
+            ) {
                 Logger.info(`Setting weight for user ${member.user.username} (${member.user.id}) to ${roleWeight.weight} due to role ${roleWeight.roleId}`);
-                DatabaseManager.instance.Users.findOrCreate({
+                await DatabaseManager.instance.Users.findOrCreate({
                     where: { userId: member.user.id },
                     defaults: { username: member.user.username, userId: member.user.id }
-                }).then(([user, created]) => {
+                }).then(async ([user, created]) => {
                     if (created) {
                         Logger.info(`Created new user entry for ${member.user.username} (${member.user.id})`);
                     }
                     if (user.roleId !== roleWeight.roleId) {
-                        user.update({ roleId: roleWeight.roleId }).then(() => {
+                        await user.update({ roleId: roleWeight.roleId }).then(() => {
                             Logger.info(`Updated weight for user ${member.user.username} (${member.user.id}) to ${roleWeight.weight}`);
                         }).catch(error => {
                             Logger.error(`Failed to update weight for user ${member.user.username} (${member.user.id}): ${error}`,);
                         });
                     }
                 })
+            } else {
+                await User.destroy({
+                    where: { userId: member.user.id }
+                }).then(() => {
+                    Logger.info(`Removed user ${member.user.username} (${member.user.id}) from database due to role change.`);
+                }).catch(error => {
+                    Logger.error(`Failed to remove user ${member.user.username} (${member.user.id}) from database: ${error}`);
+                });
             }
         }
     }

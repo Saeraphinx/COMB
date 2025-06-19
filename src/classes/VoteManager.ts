@@ -1,24 +1,28 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, GuildMember, Message, MessageActionRowComponentBuilder, SectionBuilder, SeparatorBuilder, SeparatorSpacingSize, TextDisplayBuilder, User } from "discord.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ColorResolvable, Colors, ContainerBuilder, GuildMember, Message, MessageActionRowComponentBuilder, SectionBuilder, SeparatorBuilder, SeparatorSpacingSize, TextDisplayBuilder, User } from "discord.js";
 import { EnvConfig } from "./EnvConfig";
-import { generateComponent } from "./Utils";
 import { create } from "domain";
 import { DatabaseManager } from "./Database";
 import { Op } from "sequelize";
 import { Logger } from "./Logger.ts";
+import crypto from "node:crypto";
+import { Luma } from "./Luma.ts";
 
 export class VoteManager {
     private static _instance: VoteManager | null = null;
     public instigator: GuildMember;
     public target: GuildMember;
+    public rolesStrings: string[]; // Roles to remove from the target if the vote passes. Not to be used when removing roles.
     public votes: Map<string, number>; // Map of user IDs to their vote data
     public message: Message; // Message to update with vote results
     public expiry: Date; // Expiry date for the vote
     public pingString: string; // String to ping the instigator and target in the vote message
+    private _voteId: string; // Unique identifier for the vote
 
-    static get instance(): VoteManager {
-        if (!VoteManager._instance) {
-            throw new Error("VoteManager instance does not exist. Use the constructor to create a new instance.");
-        }
+    get voteId(): string {
+        return this._voteId;
+    }
+
+    static get instance(): VoteManager | null {
         return VoteManager._instance;
     }
 
@@ -30,40 +34,61 @@ export class VoteManager {
         this.target = target;
         this.votes = new Map<string, number>();
         this.expiry = new Date(Date.now() + EnvConfig.settings.timeout); // Set expiry based on configuration
+        this._voteId = crypto.randomBytes(8).toString("base64url");
+        this.rolesStrings = target.roles.cache.map(role => `${role.name} (${role.id})`);
     }
 
-    public update(): { passed: boolean, failed: boolean } {
+    get voteScore(): number {
         let totalWeightedVotes = 0;
         for (const [userId, weight] of this.votes.entries()) {
             totalWeightedVotes += weight;
         }
-
-        if (totalWeightedVotes >= EnvConfig.settings.requiredVotes) {
-            // Logic to handle when the vote passes
-            this.message?.edit({ content: `Vote passed with ${totalWeightedVotes} weighted votes.`, components: [] });
-            return {passed: true, failed: false}; // Vote passed
-        }
-
-        if (Date.now() > this.expiry.getTime()) {
-            // Logic to handle when the vote fails due to timeout
-            this.message?.edit({ content: `Vote failed due to timeout.`, components: [] });
-            return {passed: false, failed:true}; // Vote failed
-        }
-
-        return {passed: false, failed: false}; // Vote still ongoing
+        return totalWeightedVotes;
     }
 
-    public addVote(user: User): boolean {
+    public async update(handleVotes = true, updateMessage = true): Promise<{ passed: boolean; failed: boolean; }> {
+        let totalWeightedVotes = this.voteScore;
+        let response = {passed: true, failed: false}
+
+        //vote passes
+        if (totalWeightedVotes >= EnvConfig.settings.requiredVotes) {
+            response = {passed: true, failed: false};
+            if (handleVotes) {
+                await this.executeSuccessfulVote().catch(error => {
+                    Logger.error(`Failed to handle successful vote: ${error.message}`);
+                });
+            }
+        }
+
+        //vote fails
+        if (Date.now() > this.expiry.getTime()) {
+            response = {passed: false, failed:true};
+        }
+
+        if (updateMessage) {
+            await this.updateMessage(this.generateMessage(response));
+        }
+
+        VoteManager.clearActiveVote();
+        return response;
+    }
+
+    public addVote(user: GuildMember): `voteAdded` | `ineligble` | `alreadyVoted` {
         if (this.votes.has(user.id)) {
-            return false; // User has already voted
+            Logger.warn(`User ${user.user.username} (${user.id}) has already voted in this vote.`);
+            return `alreadyVoted`; // User has already voted
         } else {
+            // the rolewights are sorted from highest to lowest, so we can
             for (const roleWeight of EnvConfig.settings.roleWeights) {
-                if (this.instigator.roles.cache.has(roleWeight.roleId)) {
+                if (user.roles.cache.has(roleWeight.roleId)) {
                     this.votes.set(user.id, roleWeight.weight);
-                    return true; // Vote added successfully
+                    Logger.info(`User ${user.user.username} (${user.id}) has voted with weight ${roleWeight.weight}.`);
+                    this.update(); // Update the vote status after adding a new vote
+                    return `voteAdded`; // Vote added successfully
                 }
             }
-            return false; // Role not found, vote not added
+            Logger.warn(`User ${user.user.username} (${user.id}) does not have a valid role to vote.`);
+            return `ineligble`; // Role not found, vote not added
         }
     }
 
@@ -72,10 +97,32 @@ export class VoteManager {
             this.votes.delete(user.id);
             return true; // Vote removed successfully
         }
+        this.update();
+
         return false; // User has not voted
     }
 
-    private generateMessage(passed: boolean, failed: boolean) {
+    public async cancelVote(): Promise<void> {
+        let status = await this.update();
+        if (status.passed || status.failed) {
+            Logger.warn(`Vote has already been resolved. Cannot cancel.`);
+            return;
+        }
+
+        await this.updateMessage(this.generateMessage({ failed: false, passed: false, cancelled: true }));
+        VoteManager.clearActiveVote();
+    }
+
+    // #region private thingies
+    private generateMessage(o: {
+        passed: boolean, 
+        failed: boolean,
+        cancelled?: boolean
+    } = {
+        passed: false,
+        failed: false,
+        cancelled: false
+    }) {
         let pingString;
         DatabaseManager.instance.Users.findAll({
             where: {
@@ -94,18 +141,28 @@ export class VoteManager {
             .join(`\n`);
 
         // change this to use the built in colors
-        let color = 14818589; // Default color for the vote message
-        if (passed) {
-            color = 3066993; // Green color for passed votes
-        } else if (failed) {
-            color = 15105570; // Red color for failed votes
+        let color:ColorResolvable = Colors.DarkOrange; // Default color for the vote message
+        if (o.passed) {
+            color = Colors.Green; // Green color for passed votes
+        } else if (o.failed) {
+            color = Colors.Red; // Red color for failed votes
         }
 
-        let mainMessage = `<@${this.instigator.id}> (${this.instigator.user.username}) has begun a vote to remove <@${this.target.id}> (${this.target.user.username})`;
-        if (passed) {
+        let mainMessage = `<@${this.instigator.id}> (${this.instigator.user.username}) has begun a vote to remove <@${this.target.id}> (${this.target.user.username})\n\nThe roles removed would be:\n${this.rolesStrings.join(`, `)}`;
+        if (o.passed) {
             mainMessage += `\n\nThe vote has passed with ${this.votes.size} votes.`;
-        } else if (failed) {
+        } else if (o.failed) {
             mainMessage += `\n\nThe vote has failed.`;
+        } else if (o.cancelled) {
+            mainMessage += `\n\nThe vote has been cancelled.`;
+        }
+
+        if (EnvConfig.isTestMode) {
+            mainMessage += `\n\n-# COMB is currently operating in test mode.`
+        }
+
+        if (EnvConfig.isDevMode) {
+            mainMessage += `\n\n-# COMB is currently operating in dev mode.`
         }
 
         const components = [
@@ -121,18 +178,16 @@ export class VoteManager {
                                     t: "button",
                                     n: "cancelVote",
                                     cD: {
-                                        id: this.target.id,
-                                        initiatorId: this.instigator.id,
+                                        id: this._voteId
                                     }
-                                })
-                            )
+                                })).setDisabled(o.passed || o.failed || o.cancelled)
                         )
                         .addTextDisplayComponents(
                             new TextDisplayBuilder().setContent(`# Emergency Vote`),
                         ),
                 )
                 .addTextDisplayComponents(
-                    new TextDisplayBuilder().setContent(`<@${this.instigator.id}> (${this.instigator.user.username}) has begun a vote to remove <@${this.target.id}> (${this.instigator.user.username})`),
+                    new TextDisplayBuilder().setContent(mainMessage),
                 )
                 .addSeparatorComponents(
                     new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true),
@@ -151,12 +206,12 @@ export class VoteManager {
                                 .setLabel(`Vote`)
                                 .setCustomId(JSON.stringify({
                                     t: "button",
-                                    n: "vote",
+                                    n: "addVote",
                                     cD: {
-                                        id: this.target.id,
-                                        initiatorId: this.instigator.id,
-                                    }}
-                                )),
+                                        id: this._voteId
+                                    }
+                                }))
+                                .setDisabled(o.passed || o.failed || o.cancelled),
                             new ButtonBuilder()
                                 .setStyle(ButtonStyle.Secondary)
                                 .setLabel(`Remove Vote`)
@@ -164,13 +219,51 @@ export class VoteManager {
                                     t: "button",
                                     n: "removeVote",
                                     cD: {
-                                        id: this.target.id,
-                                        initiatorId: this.instigator.id,
+                                        id: this._voteId
                                     }
-                                })),
+                                }))
+                                .setDisabled(o.passed || o.failed || o.cancelled),
                         ),
                 ),
         ];
         return components;
     }
+
+    private async updateMessage(components: ContainerBuilder[]): Promise<void> {
+        if (!this.message) {
+            Logger.error(`Vote message is not set. Cannot update message.`);
+            return;
+        }
+        this.message.edit({ components: components }).catch(error => {
+            Logger.error(`Failed to update vote message: ${error.message}`)
+        });
+    }
+
+    private async executeSuccessfulVote(): Promise<void> {
+        if (EnvConfig.isDevMode) {
+            Logger.log(`Remove roles disabled due to developer mode`)
+        }
+
+        await this.target.roles.set([]);
+        Logger.log(`Removed roles from ${this.target.id}`)
+        for (let additionalGuild of EnvConfig.settings.additionalGuilds) {
+            await Luma.instance.guilds.fetch(additionalGuild).then(async guild => {
+                await guild.members.fetch(this.target.id).then(async member => {
+                    Logger.log(`Removing roles from additional server ${guild.name} (${guild.id})`);
+                    Logger.log(`Removing ${member.roles.cache.map(r => `${r.name} (${r.id})`).join(`, `)}`)
+                    await member.roles.set([]);
+                })
+            })
+        }
+    }
+
+    private static clearActiveVote() {
+        if (VoteManager._instance) {
+            Logger.info(`Clearing VoteManager instance for vote ID: ${VoteManager._instance.voteId}`);
+            VoteManager._instance = null; // Clear the instance after handling the vote
+        } else {
+            Logger.warn(`No active VoteManager instance to clear.`);
+        }
+    }
+    // #endregion
 }

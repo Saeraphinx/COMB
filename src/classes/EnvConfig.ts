@@ -13,7 +13,8 @@ const DEFAULT_CONFIG = {
             roleId: `0`, // role ID for the weight
             weight: 0 // weight of votes made by members of the role id
         }],
-        guildId: `0` // guild ID for the bot to operate in
+        guildId: `0`, // guild ID for the bot to operate in
+        additionalGuilds: [`0`]
     }
 }
 
@@ -47,5 +48,6 @@ export class EnvConfig {
             return b.weight - a.weight; // sort by weight in descending order
         })
         this.settings.guildId = process.env.GUILD_ID || DEFAULT_CONFIG.settings.guildId;
+        this.settings.additionalGuilds = process.env.ADDITIONAL_GUILDS?.split(`,`) || []
     }
 }

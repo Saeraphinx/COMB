@@ -5,7 +5,15 @@ import { Luma } from "./Luma";
 
 export class IdleJobs {
 
-    public checkAllUsers(luma: Luma): void {
+    private async attemptToUpdateUsersInDatabase(luma: Luma) {
+        const users = await DatabaseManager.instance.Users.findAll();
+        for (let user of users) {
+            let guildUser = await (await luma.guilds.fetch(EnvConfig.settings.guildId)).members.fetch(user.userId);
+            User.updateUser(guildUser);
+        }
+    }
+
+    private attemptToPullAllUsers(luma: Luma): void {
         luma.guilds.fetch(EnvConfig.settings.guildId).then(guild => {
             guild.roles.fetch().then(roles => {
                 EnvConfig.settings.roleWeights.forEach(roleWeight => {
