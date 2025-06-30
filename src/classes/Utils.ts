@@ -1,5 +1,5 @@
 import { ButtonInteraction, Interaction, MessageFlags, ModalSubmitInteraction } from 'discord.js';
-import { Logger } from './Logger';
+import { Logger } from './Logger.ts';
 
 export function rejectInstigator(interaction: ButtonInteraction | ModalSubmitInteraction, message: string, loggerMessage: string | null = message): void {
     if (loggerMessage !== null) {

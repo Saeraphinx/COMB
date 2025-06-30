@@ -1,5 +1,5 @@
 import { ActionRow, ActionRowBuilder, ApplicationIntegrationType, InteractionContextType, ModalBuilder, PermissionFlagsBits, SlashCommandBuilder, TextInputBuilder, TextInputStyle } from "discord.js";
-import { ICommand } from "../../classes/Command";
+import { ICommand } from "../../classes/Command.ts";
 
 let commandData = new SlashCommandBuilder();
 commandData

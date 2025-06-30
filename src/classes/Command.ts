@@ -1,5 +1,5 @@
 import { AutocompleteInteraction, ChatInputCommandInteraction, RESTPostAPIChatInputApplicationCommandsJSONBody } from "discord.js";
-import { Luma } from "./Luma";
+import { Luma } from "./Luma.ts";
 
 export interface ICommand {
     name: string;

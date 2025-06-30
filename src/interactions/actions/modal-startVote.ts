@@ -1,6 +1,6 @@
 import { MessageFlags, ModalSubmitInteraction } from "discord.js";
-import { CustomID, IAction } from "src/classes/Action";
-import { Logger } from "src/classes/Logger";
+import { CustomID, IAction } from "../../classes/Action.ts";
+import { Logger } from "../../classes/Logger.ts";
 
 const action: IAction = {
     type: "modal",

@@ -1,6 +1,6 @@
 import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model, ModelStatic, Sequelize } from 'sequelize';
-import { Logger } from './Logger';
-import { EnvConfig } from './EnvConfig';
+import { Logger } from './Logger.ts';
+import { EnvConfig } from './EnvConfig.ts';
 import path from 'node:path';
 import { APIGuildMember, GuildMember } from 'discord.js';
 

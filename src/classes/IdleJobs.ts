@@ -1,7 +1,7 @@
-import { DatabaseManager, User } from "./Database";
-import { EnvConfig } from "./EnvConfig";
-import { Logger } from "./Logger";
-import { Luma } from "./Luma";
+import { DatabaseManager, User } from "./Database.ts";
+import { EnvConfig } from "./EnvConfig.ts";
+import { Logger } from "./Logger.ts";
+import { Luma } from "./Luma.ts";
 
 export class IdleJobs {
 

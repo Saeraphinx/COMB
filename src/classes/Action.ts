@@ -1,5 +1,5 @@
 import { BaseInteraction, ButtonInteraction, InteractionType, ModalSubmitInteraction } from "discord.js";
-import { Luma } from "./Luma";
+import { Luma } from "./Luma.ts";
 
 type ActionType = `modal` | `button`
 

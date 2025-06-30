@@ -15,12 +15,16 @@ const DEFAULT_CONFIG = {
         }],
         guildId: `0`, // guild ID for the bot to operate in
         additionalGuilds: [`0`]
+    },
+    bot: {
+        token: ``, // bot token
     }
 }
 
 export class EnvConfig {
     public static database = DEFAULT_CONFIG.database;
     public static settings = DEFAULT_CONFIG.settings;
+    public static bot = DEFAULT_CONFIG.bot;
 
     public static get isDevMode(): boolean {
         return process.env.NODE_ENV === `development` || process.env.NODE_ENV === `dev`;
@@ -49,5 +53,6 @@ export class EnvConfig {
         })
         this.settings.guildId = process.env.GUILD_ID || DEFAULT_CONFIG.settings.guildId;
         this.settings.additionalGuilds = process.env.ADDITIONAL_GUILDS?.split(`,`) || []
+        this.bot.token = process.env.BOT_TOKEN || DEFAULT_CONFIG.bot.token;
     }
 }

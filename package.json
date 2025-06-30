@@ -1,5 +1,11 @@
 {
   "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "start:env": "node --env-file=.env build/index.js",
+    "dev": "yarn build && yarn start:env"
+  },
   "dependencies": {
     "discord.js": "^14.19.3",
     "sequelize": "^6.37.7",

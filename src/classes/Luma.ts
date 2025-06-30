@@ -1,9 +1,9 @@
 import { Client, ClientOptions, Collection, Interaction, RepliableInteraction } from "discord.js";
-import { Command } from "./Command";
+import { Command } from "./Command.ts";
 import fs from "fs";
 import path from "path";
-import { Action } from "./Action";
-import { VoteManager } from "./VoteManager";
+import { Action } from "./Action.ts";
+import { VoteManager } from "./VoteManager.ts";
 
 export class Luma extends Client {
     private static _instance: Luma;
@@ -34,7 +34,7 @@ export class Luma extends Client {
         this.commands = new Collection<string, Command>();
         // load commands from a directory
         const commandsPath = path.join(import.meta.dirname, "../interactions/chat");
-        const commandFiles = fs.readdirSync(commandsPath).filter((file: string) => file.endsWith(".ts"));
+        const commandFiles = fs.readdirSync(commandsPath).filter((file: string) => file.endsWith(".js"));
         for (const file of commandFiles) {
             const commandPath = path.join(commandsPath, file);
             import(commandPath).then((module) => {
@@ -50,7 +50,7 @@ export class Luma extends Client {
         this.mActions = new Collection<string, Action>();
         // load actions from a directory
         const actionsPath = path.join(import.meta.dirname, "../interactions/actions");
-        const actionFiles = fs.readdirSync(actionsPath).filter((file: string) => file.endsWith(".ts"));
+        const actionFiles = fs.readdirSync(actionsPath).filter((file: string) => file.endsWith(".js"));
         for (const file of actionFiles) {
             const actionPath = path.join(actionsPath, file);
             import(actionPath).then((module) => {

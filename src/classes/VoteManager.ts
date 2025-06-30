@@ -1,7 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ColorResolvable, Colors, ContainerBuilder, GuildMember, Message, MessageActionRowComponentBuilder, SectionBuilder, SeparatorBuilder, SeparatorSpacingSize, TextDisplayBuilder, User } from "discord.js";
-import { EnvConfig } from "./EnvConfig";
+import { EnvConfig } from "./EnvConfig.ts";
 import { create } from "domain";
-import { DatabaseManager } from "./Database";
+import { DatabaseManager } from "./Database.ts";
 import { Op } from "sequelize";
 import { Logger } from "./Logger.ts";
 import crypto from "node:crypto";

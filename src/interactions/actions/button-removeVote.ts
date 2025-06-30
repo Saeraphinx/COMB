@@ -1,9 +1,9 @@
 import { ButtonInteraction, GuildMember, MessageFlags } from "discord.js";
-import { IAction } from "src/classes/Action";
-import { User } from "src/classes/Database";
-import { Logger } from "src/classes/Logger";
-import { checkIfValidInteraction, rejectInstigator } from "src/classes/Utils";
-import { VoteManager } from "src/classes/VoteManager";
+import { IAction } from "../../classes/Action.ts";
+import { User } from "../../classes/Database.ts";
+import { Logger } from "../../classes/Logger.ts";
+import { checkIfValidInteraction, rejectInstigator } from "../../classes/Utils.ts";
+import { VoteManager } from "../../classes/VoteManager.ts";
 
 const action: IAction = {
     type: `button`,
