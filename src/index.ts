@@ -3,9 +3,12 @@ import { Luma } from './classes/Luma.ts';
 import { EnvConfig } from './classes/EnvConfig.ts';
 import { Logger } from './classes/Logger.ts';
 
+EnvConfig.init();
+Logger.init();
 let bot = new Luma({
     intents: [IntentsBitField.Flags.Guilds, IntentsBitField.Flags.GuildMembers, IntentsBitField.Flags.GuildMessages, IntentsBitField.Flags.MessageContent],
 });
+await bot.init();
 
 bot.login(EnvConfig.bot.token).then(() => {
     Logger.info(`Logged in as ${bot.user?.tag} (${bot.user?.id})`);

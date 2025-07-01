@@ -43,3 +43,5 @@ function rejectInstigator(interaction: ModalSubmitInteraction, message: string, 
     });
     return;
 }
+
+export default action;

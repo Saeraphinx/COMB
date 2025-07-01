@@ -2,9 +2,13 @@ import { Client, ClientOptions, Collection, Interaction, RepliableInteraction } 
 import { Command } from "./Command.ts";
 import fs from "fs";
 import path from "path";
+import { pathToFileURL } from 'node:url';
 import { Action } from "./Action.ts";
 import { VoteManager } from "./VoteManager.ts";
+import { Logger } from "./Logger.ts";
 
+const actionsFolderName = "actions";
+const commandsFolderName = "chat";
 export class Luma extends Client {
     private static _instance: Luma;
     public commands: Collection<string, Command>;
@@ -17,10 +21,6 @@ export class Luma extends Client {
         }
         super(options);
         Luma._instance = this;
-        this.loadCommands();
-        this.loadActions();
-        Command.registerListener(this);
-        Action.registerListener(this);
     }
 
     public static get instance(): Luma {
@@ -30,14 +30,22 @@ export class Luma extends Client {
         return Luma._instance;
     }
 
-    public loadCommands(): void {
+    public async init() {
+        await this.loadCommands();
+        await this.loadActions();
+        Command.registerListener(this);
+        Action.registerListener(this);
+    }
+
+    private async loadCommands(): Promise<void> {
         this.commands = new Collection<string, Command>();
         // load commands from a directory
-        const commandsPath = path.join(import.meta.dirname, "../interactions/chat");
+        const commandsPath = path.join(import.meta.dirname, "../interactions", commandsFolderName);
         const commandFiles = fs.readdirSync(commandsPath).filter((file: string) => file.endsWith(".js"));
         for (const file of commandFiles) {
+            Logger.debug(`Loading command file: ${file}`);
             const commandPath = path.join(commandsPath, file);
-            import(commandPath).then((module) => {
+            await import(pathToFileURL(commandPath).href).then((module) => {
                 const command: Command = new Command(module.default);
                 this.commands.set(command.name, command);
             }).catch((error) => {
@@ -46,14 +54,15 @@ export class Luma extends Client {
         }
     }
 
-    public loadActions(): void {
+    private async loadActions(): Promise<void> {
         this.mActions = new Collection<string, Action>();
         // load actions from a directory
-        const actionsPath = path.join(import.meta.dirname, "../interactions/actions");
+        const actionsPath = path.join(import.meta.dirname, "../interactions", actionsFolderName);
         const actionFiles = fs.readdirSync(actionsPath).filter((file: string) => file.endsWith(".js"));
         for (const file of actionFiles) {
+            Logger.debug(`Loading action file: ${file}`);
             const actionPath = path.join(actionsPath, file);
-            import(actionPath).then((module) => {
+            await import(pathToFileURL(actionPath).href).then((module) => {
                 const action: Action = new Action(module.default);
                 this.mActions.set(`${action.type}-${action.name}`, action);
             }).catch((error) => {

@@ -5,6 +5,12 @@ import { Luma } from "./Luma.ts";
 
 export class IdleJobs {
 
+    public static async init(luma: Luma): Promise<void> {
+        Logger.debug(`Initializing idle jobs...`);
+    }
+
+    
+
     private async attemptToUpdateUsersInDatabase(luma: Luma) {
         const users = await DatabaseManager.instance.Users.findAll();
         for (let user of users) {

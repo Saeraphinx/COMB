@@ -1,5 +1,6 @@
 import { BaseInteraction, ButtonInteraction, InteractionType, ModalSubmitInteraction } from "discord.js";
 import { Luma } from "./Luma.ts";
+import { Logger } from "./Logger.ts";
 
 type ActionType = `modal` | `button`
 
@@ -29,6 +30,7 @@ export class Action {
     }
 
     public static registerListener(luma: Luma): void {
+        Logger.debug(`Registering action listener`);
         luma.on("interactionCreate", async (interaction: BaseInteraction) => {
             if (interaction.isButton() || interaction.isModalSubmit()) {
                 let customId: CustomID | null = null;

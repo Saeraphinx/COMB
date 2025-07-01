@@ -7,11 +7,11 @@ export class Logger {
     public static init() {
         let transports: Winston.transport[] = [];
 
-        let consoleLevel = `consoleInfo`;
-        if (process.env.NODE_ENV == `test`) {
-            consoleLevel = `warn`;
+        let consoleLevel = LogLevel.ConsoleInfo;
+        if (EnvConfig.isTestMode) {
+            consoleLevel = LogLevel.Warn;
         } else if (EnvConfig.isDevMode) {
-            consoleLevel = `http`;
+            consoleLevel = LogLevel.Debug;
         }
 
         transports.push(new Winston.transports.Console({
@@ -50,12 +50,11 @@ export class Logger {
                 consoleInfo: 4,
                 debugWarn: 5,
                 debug: 6,
-                http: 7,
             },
             transports: transports,
         });
 
-        Logger.log(`Logger initialized.`);
+        Logger.log(`Logger initialized with default console level of ${consoleLevel}.`);
     }
 
     public static log(message: string, level = LogLevel.Info): void {

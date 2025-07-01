@@ -1,5 +1,6 @@
 import { AutocompleteInteraction, ChatInputCommandInteraction, RESTPostAPIChatInputApplicationCommandsJSONBody } from "discord.js";
 import { Luma } from "./Luma.ts";
+import { Logger } from "./Logger.ts";
 
 export interface ICommand {
     name: string;
@@ -25,6 +26,7 @@ export class Command {
     }
 
     public static registerListener(luma: Luma): void {
+        Logger.debug(`Registering command listener`);
         luma.on("interactionCreate", async (interaction) => {
             if (interaction.isAutocomplete()) {
                 const command = luma.commands.get(interaction.commandName);

@@ -46,3 +46,5 @@ const action: IAction = {
         }
     }
 };
+
+export default action;
