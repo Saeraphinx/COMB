@@ -19,18 +19,18 @@ const DEFAULT_CONFIG = {
     },
     bot: {
         token: ``, // bot token
-    },
-    tasks: {
-        refreshAllUsersInterval: ms(`30d`), // interval to refresh all users in the guild
-        updateUsersInDatabaseInterval: ms(`1d`), // interval to update users in the database
-    }
+    }//,
+    //tasks: {
+    //    refreshAllUsersInterval: ms(`30d`), // interval to refresh all users in the guild
+    //    updateUsersInDatabaseInterval: ms(`1d`), // interval to update users in the database
+    //}
 }
 
 export class EnvConfig {
     public static database = DEFAULT_CONFIG.database;
     public static settings = DEFAULT_CONFIG.settings;
     public static bot = DEFAULT_CONFIG.bot;
-    public static tasks = DEFAULT_CONFIG.tasks;
+    //public static tasks = DEFAULT_CONFIG.tasks;
     public static get storagePath(): string {
         return path.resolve(`./storage`);
     }
@@ -63,8 +63,8 @@ export class EnvConfig {
         this.settings.guildId = process.env.GUILD_ID || DEFAULT_CONFIG.settings.guildId;
         this.settings.additionalGuilds = process.env.ADDITIONAL_GUILDS?.split(`,`) || []
         this.bot.token = process.env.BOT_TOKEN || DEFAULT_CONFIG.bot.token;
-        this.tasks.refreshAllUsersInterval = parseMsValueFromEnv(`REFRESH_ALL_USERS_INTERVAL`, DEFAULT_CONFIG.tasks.refreshAllUsersInterval);
-        this.tasks.updateUsersInDatabaseInterval = parseMsValueFromEnv(`UPDATE_USERS_IN_DATABASE_INTERVAL`, DEFAULT_CONFIG.tasks.updateUsersInDatabaseInterval);
+        //this.tasks.refreshAllUsersInterval = parseMsValueFromEnv(`REFRESH_ALL_USERS_INTERVAL`, DEFAULT_CONFIG.tasks.refreshAllUsersInterval);
+        //this.tasks.updateUsersInDatabaseInterval = parseMsValueFromEnv(`UPDATE_USERS_IN_DATABASE_INTERVAL`, DEFAULT_CONFIG.tasks.updateUsersInDatabaseInterval);
     }
 }
 
