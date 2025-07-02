@@ -15,8 +15,8 @@ commandData
     .setIntegrationTypes(ApplicationIntegrationType.GuildInstall);
 
 const command: ICommand = {
-    name: "startVote",
-    description: "Starts a vote for a given topic.",
+    name: commandData.name,
+    description: commandData.description,
     commandData: commandData.toJSON(),
     run: async (interaction) => {
         let user = interaction.options.getUser("user", true);

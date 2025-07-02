@@ -1,4 +1,5 @@
 import ms, { StringValue } from "ms";
+import path from "node:path";
 
 const DEFAULT_CONFIG = {
     database: {
@@ -30,6 +31,9 @@ export class EnvConfig {
     public static settings = DEFAULT_CONFIG.settings;
     public static bot = DEFAULT_CONFIG.bot;
     public static tasks = DEFAULT_CONFIG.tasks;
+    public static get storagePath(): string {
+        return path.resolve(`./storage`);
+    }
 
     public static get isDevMode(): boolean {
         return process.env.NODE_ENV === `development` || process.env.NODE_ENV === `dev`;

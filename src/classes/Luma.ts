@@ -6,6 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { Action } from "./Action.ts";
 import { VoteManager } from "./VoteManager.ts";
 import { Logger } from "./Logger.ts";
+import { EnvConfig } from "./EnvConfig.ts";
+import crypto from "crypto";
 
 const actionsFolderName = "actions";
 const commandsFolderName = "chat";
@@ -35,6 +37,7 @@ export class Luma extends Client {
         await this.loadActions();
         Command.registerListener(this);
         Action.registerListener(this);
+        this.once("ready", this.registerCommandsWithDiscord);
     }
 
     private async loadCommands(): Promise<void> {
@@ -78,6 +81,28 @@ export class Luma extends Client {
             return interaction.editReply({ content: errorMessage });
         } else {
             return interaction.followUp({ content: errorMessage, ephemeral: true });
+        }
+    }
+
+    public async registerCommandsWithDiscord(): Promise<void> {
+        if (!this.application) {
+            Logger.error("Application is not available. Cannot register commands.");
+            return;
+        }
+        const localCommands = this.commands.map(command => command.commandData);
+        const discordCommands = await this.application.commands.fetch();
+
+        for (const command of localCommands) {
+            const existingCommand = discordCommands?.find(c => c.name === command.name);
+            if (existingCommand) {
+                // Update existing command
+                await this.application.commands.edit(existingCommand.id, command);
+                Logger.info(`Updated command: ${command.name}`);
+            } else {
+                // Create new command
+                await this.application.commands.create(command);
+                Logger.info(`Registered new command: ${command.name}`);
+            }
         }
     }
 }

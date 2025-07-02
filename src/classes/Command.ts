@@ -38,9 +38,10 @@ export class Command {
                 }
                 return;
             } else if (interaction.isChatInputCommand()) {
+                Logger.debug(`Received command interaction: ${interaction.commandName}`);
                 const command = luma.commands.get(interaction.commandName);
                 if (!command) return;
-
+                Logger.debug(`Executing command: ${interaction.commandName}`);
                 try {
                     await command.run(interaction);
                 } catch (error) {
