@@ -7,10 +7,10 @@ import { VoteManager } from "../../classes/VoteManager.ts";
 
 const action: IAction = {
     type: `button`,
-    name: "acceptVote",
+    name: "addVote",
     // accepting an ongoing vote
     run: async (interaction) => {
-        if (!checkIfValidInteraction(interaction, `button`, `acceptVote`)) {
+        if (!checkIfValidInteraction(interaction, `button`, `addVote`)) {
             return;
         }
 

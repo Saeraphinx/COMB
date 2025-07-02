@@ -1,4 +1,4 @@
-import { Client, ClientOptions, Collection, Interaction, RepliableInteraction } from "discord.js";
+import { Client, ClientOptions, Collection, Interaction, MessageFlags, RepliableInteraction } from "discord.js";
 import { Command } from "./Command.ts";
 import fs from "fs";
 import path from "path";
@@ -15,7 +15,9 @@ export class Luma extends Client {
     private static _instance: Luma;
     public commands: Collection<string, Command>;
     public mActions: Collection<string, Action>;
-    public currentVoteManager: VoteManager | null = null;
+    public get currentVoteManager(): VoteManager | null {
+        return VoteManager.instance;
+    }
 
     constructor(options: ClientOptions) {
         if (Luma._instance) {
@@ -76,11 +78,11 @@ export class Luma extends Client {
 
     public static sendErrorInteractionResponse(interaction: RepliableInteraction, errorMessage: string = `There was an error while processing this action`): Promise<any> {
         if (!interaction.replied && !interaction.deferred) {
-            return interaction.reply({ content: errorMessage, ephemeral: true });
+            return interaction.reply({ content: errorMessage, flags: [MessageFlags.Ephemeral] });
         } else if (!interaction.replied && interaction.deferred) {
             return interaction.editReply({ content: errorMessage });
         } else {
-            return interaction.followUp({ content: errorMessage, ephemeral: true });
+            return interaction.followUp({ content: errorMessage, flags: [MessageFlags.Ephemeral] });
         }
     }
 

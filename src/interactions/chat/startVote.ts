@@ -1,5 +1,6 @@
-import { ActionRow, ActionRowBuilder, ApplicationIntegrationType, InteractionContextType, ModalBuilder, PermissionFlagsBits, SlashCommandBuilder, TextInputBuilder, TextInputStyle } from "discord.js";
+import { ActionRow, ActionRowBuilder, ApplicationIntegrationType, GuildMemberRoleManager, InteractionContextType, MessageFlags, ModalBuilder, PermissionFlagsBits, SlashCommandBuilder, TextInputBuilder, TextInputStyle } from "discord.js";
 import { ICommand } from "../../classes/Command.ts";
+import { EnvConfig } from "../../classes/EnvConfig.ts";
 
 let commandData = new SlashCommandBuilder();
 commandData
@@ -20,6 +21,23 @@ const command: ICommand = {
     commandData: commandData.toJSON(),
     run: async (interaction) => {
         let user = interaction.options.getUser("user", true);
+
+        let member = await interaction.guild?.members.fetch(user.id).catch(() => null);
+        if (!member) {
+            interaction.reply({
+                content: `Could not find user ${user.username} in this guild.`,
+                flags: [MessageFlags.Ephemeral]
+            });
+            return;
+        }
+
+        if (!member.roles || !(member.roles instanceof GuildMemberRoleManager)) {
+            interaction.reply({
+                content: `User ${user.username} does not have any roles in this guild.`,
+                flags: [MessageFlags.Ephemeral]
+            });
+            return;
+        }
 
         const modal = new ModalBuilder()
             .setCustomId(JSON.stringify({

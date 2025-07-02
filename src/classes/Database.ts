@@ -28,12 +28,14 @@ export class DatabaseManager {
             Logger.log(`Using SQLite database at ${storagePath}`);
             this.sequelize = new Sequelize({
                 dialect: EnvConfig.database.dialect,
-                storage: storagePath
+                storage: storagePath,
+                logging: false
             });
         } else if (EnvConfig.database.dialect === `postgres`) {
             Logger.log(`Using PostgreSQL database`);
             this.sequelize = new Sequelize(EnvConfig.database.connectionString, {
                 dialect: EnvConfig.database.dialect,
+                logging: false,
             });
         } else {
             process.exit(1); // unsupported database dialect
@@ -130,12 +132,17 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
                             Logger.error(`Failed to update weight for user ${member.user.username} (${member.user.id}): ${error}`,);
                         });
                     }
-                })
+                }).catch(error => {
+                    Logger.error(`Failed to find or create user ${member.user.username} (${member.user.id}): ${error}`);
+                });
+                return;
             } else {
                 await User.destroy({
                     where: { userId: member.user.id }
-                }).then(() => {
-                    Logger.info(`Removed user ${member.user.username} (${member.user.id}) from database due to role change.`);
+                }).then((test) => {
+                    if (test > 0) {
+                        Logger.info(`Removed user ${member.user.username} (${member.user.id}) from database due to role change.`);
+                    }
                 }).catch(error => {
                     Logger.error(`Failed to remove user ${member.user.username} (${member.user.id}) from database: ${error}`);
                 });

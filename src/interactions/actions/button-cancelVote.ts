@@ -10,7 +10,7 @@ const action: IAction = {
     name: "cancelVote",
     // accepting an ongoing vote
     run: async (interaction) => {
-        if (!checkIfValidInteraction(interaction, `button`, `acceptVote`)) {
+        if (!checkIfValidInteraction(interaction, `button`, `cancelVote`)) {
             return;
         }
 
@@ -25,24 +25,15 @@ const action: IAction = {
             return rejectInstigator(interaction, "There is not an active vote.");
         }
 
-        let voteOutput = VoteManager.instance.addVote(instigator);
-
-        switch (voteOutput) {
-            case "voteAdded":
-                await interaction.reply({
-                    content: `Your vote has been processed.`,
-                    flags: [MessageFlags.Ephemeral]
-                });
-                break;
-            case "alreadyVoted":
-                return rejectInstigator(interaction, "You have already voted in this vote.");
-            case "ineligble":
-                Logger.warn(`${instigator.user.username} (${instigator.id}) attempted to vote while no vote is active.`);
-                return rejectInstigator(interaction, "There is no active vote at the moment.");
-            default:
-                Logger.error(`Unexpected vote output: ${voteOutput}`);
-                return rejectInstigator(interaction, "An unexpected error occurred while processing your vote.");
-                
+        if (interaction.user.id === VoteManager.instance.instigator.id) {
+            await VoteManager.instance.cancelVote();
+            await interaction.reply({
+                content: `The vote has been cancelled.`,
+                flags: [MessageFlags.Ephemeral]
+            });
+        } else {
+            Logger.warn(`User ${interaction.user.username} (${interaction.user.id}) attempted to cancel a vote they are not the instigator of.`);
+            return rejectInstigator(interaction, "You are not the instigator of this vote and cannot cancel it.");
         }
     }
 };

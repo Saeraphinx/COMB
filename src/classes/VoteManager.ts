@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ColorResolvable, Colors, ContainerBuilder, GuildMember, Message, MessageActionRowComponentBuilder, SectionBuilder, SeparatorBuilder, SeparatorSpacingSize, TextDisplayBuilder, User } from "discord.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ColorResolvable, Colors, ContainerBuilder, GuildMember, Message, MessageActionRowComponentBuilder, MessageCreateOptions, MessageFlags, MessagePayload, SectionBuilder, SeparatorBuilder, SeparatorSpacingSize, TextDisplayBuilder, User } from "discord.js";
 import { EnvConfig } from "./EnvConfig.ts";
 import { create } from "domain";
 import { DatabaseManager } from "./Database.ts";
@@ -6,6 +6,8 @@ import { Op } from "sequelize";
 import { Logger } from "./Logger.ts";
 import crypto from "node:crypto";
 import { Luma } from "./Luma.ts";
+import { stat } from "node:fs";
+import ms from "ms";
 
 export class VoteManager {
     private static _instance: VoteManager | null = null;
@@ -13,10 +15,12 @@ export class VoteManager {
     public target: GuildMember;
     public rolesStrings: string[]; // Roles to remove from the target if the vote passes. Not to be used when removing roles.
     public votes: Map<string, number>; // Map of user IDs to their vote data
-    public message: Message; // Message to update with vote results
+    public message: Message | null; // Message to update with vote results
     public expiry: Date; // Expiry date for the vote
     public pingString: string; // String to ping the instigator and target in the vote message
+    public pingIds: string[]; // Array of user IDs to ping in the vote message
     private _voteId: string; // Unique identifier for the vote
+    private _updateInterval: NodeJS.Timeout | null = null; // Interval for updating the vote status
 
     get voteId(): string {
         return this._voteId;
@@ -35,7 +39,17 @@ export class VoteManager {
         this.votes = new Map<string, number>();
         this.expiry = new Date(Date.now() + EnvConfig.settings.timeout); // Set expiry based on configuration
         this._voteId = crypto.randomBytes(8).toString("base64url");
-        this.rolesStrings = target.roles.cache.map(role => `${role.name} (${role.id})`);
+        this.rolesStrings = target.roles.cache.filter(role => !role.managed && role.name !== `@everyone`).map(role => `${role.name} (${role.id})`);
+        this.pingString = `Unset`;
+        this.pingIds = [this.instigator.id]; // Ping instigator and target by default
+        this.message = null;
+        this.sendMessage();
+        VoteManager._instance = this; // Set the static instance to the current instance
+        this._updateInterval = setInterval(() => {
+            this.update().catch(error => {
+                Logger.error(`Failed to update vote: ${error.message}`);
+            });
+        }, ms(`1 minute`));
     }
 
     get voteScore(): number {
@@ -48,11 +62,12 @@ export class VoteManager {
 
     public async update(handleVotes = true, updateMessage = true): Promise<{ passed: boolean; failed: boolean; }> {
         let totalWeightedVotes = this.voteScore;
-        let response = {passed: true, failed: false}
+        let response = {passed: false, failed: false};
 
         //vote passes
         if (totalWeightedVotes >= EnvConfig.settings.requiredVotes) {
             response = {passed: true, failed: false};
+            Logger.info(`Vote passed with ${totalWeightedVotes} votes.`);
             if (handleVotes) {
                 await this.executeSuccessfulVote().catch(error => {
                     Logger.error(`Failed to handle successful vote: ${error.message}`);
@@ -62,14 +77,17 @@ export class VoteManager {
 
         //vote fails
         if (Date.now() > this.expiry.getTime()) {
-            response = {passed: false, failed:true};
+            response = {passed: false, failed: true};
+            await this.updateMessage(await this.generateMessage(response)).catch(error => {
+                Logger.error(`Failed to update vote message: ${error.message}`);
+            });
+            VoteManager.clearActiveVote();
         }
 
         if (updateMessage) {
-            await this.updateMessage(this.generateMessage(response));
+            await this.updateMessage(await this.generateMessage({...response, cancelled: false}));
         }
 
-        VoteManager.clearActiveVote();
         return response;
     }
 
@@ -98,23 +116,23 @@ export class VoteManager {
             return true; // Vote removed successfully
         }
         this.update();
-
         return false; // User has not voted
     }
 
     public async cancelVote(): Promise<void> {
-        let status = await this.update();
+        let status = await this.update(true, false);
         if (status.passed || status.failed) {
+            this.updateMessage(await this.generateMessage(status));
             Logger.warn(`Vote has already been resolved. Cannot cancel.`);
             return;
         }
 
-        await this.updateMessage(this.generateMessage({ failed: false, passed: false, cancelled: true }));
+        await this.updateMessage(await this.generateMessage({ failed: false, passed: false, cancelled: true }));
         VoteManager.clearActiveVote();
     }
 
     // #region private thingies
-    private generateMessage(o: {
+    private async generateMessage(o: {
         passed: boolean, 
         failed: boolean,
         cancelled?: boolean
@@ -122,17 +140,17 @@ export class VoteManager {
         passed: false,
         failed: false,
         cancelled: false
-    }) {
-        let pingString;
-        DatabaseManager.instance.Users.findAll({
+    }) : Promise<MessageCreateOptions> {
+        await DatabaseManager.instance.Users.findAll({
             where: {
                 userId: { [Op.ne]: this.instigator.id }
             }}
         ).then(users => {
-            pingString = users.map(user => `<@${user.userId}>`).join(``);
+            this.pingString = users.map(user => `<@${user.userId}>`).join(``);
+            this.pingIds = users.map(user => user.userId);
         }).catch(error => {
             Logger.error(`Failed to fetch users for ping string: ${error.message}`);
-            pingString = `<@${this.instigator.id}>`; // Fallback to instigator if fetching fails
+            this.pingString = `<@${this.instigator.id}>`; // Fallback to instigator if fetching fails
         });
 
         let voteString = this.votes.size === 0 ? `No votes yet.` : Array.from(this.votes.entries())
@@ -146,9 +164,11 @@ export class VoteManager {
             color = Colors.Green; // Green color for passed votes
         } else if (o.failed) {
             color = Colors.Red; // Red color for failed votes
+        } else if (o.cancelled) {
+            color = Colors.Grey; // Grey color for cancelled votes
         }
 
-        let mainMessage = `<@${this.instigator.id}> (${this.instigator.user.username}) has begun a vote to remove <@${this.target.id}> (${this.target.user.username})\n\nThe roles removed would be:\n${this.rolesStrings.join(`, `)}`;
+        let mainMessage = `<@${this.instigator.id}> (${this.instigator.user.username}) has begun a vote to remove <@${this.target.id}> (${this.target.user.username})'s roles.\n\nThe roles removed would be:\n${this.rolesStrings.join(`, `)}`;
         if (o.passed) {
             mainMessage += `\n\nThe vote has passed with ${this.votes.size} votes.`;
         } else if (o.failed) {
@@ -226,22 +246,40 @@ export class VoteManager {
                         ),
                 ),
         ];
-        return components;
+        return { components: components, allowedMentions: { roles: [], users: [] }, flags: [MessageFlags.IsComponentsV2]};
     }
 
-    private async updateMessage(components: ContainerBuilder[]): Promise<void> {
+    private async sendMessage(): Promise<Message> {
+        if (this.message) {
+            Logger.warn(`Vote message already exists. Not sending a new one.`);
+            return this.message; // If the message already exists, return it
+        }
+
+        const channel = await Luma.instance.channels.fetch(EnvConfig.settings.voteChannelId);
+        if (!channel || !channel.isSendable()) {
+            throw new Error(`Vote channel not found or is not a text channel.`);
+        }
+        channel.sendTyping(); // Indicate that the bot is typing
+        let message = await this.generateMessage();
+        await channel.send({ content: this.pingString });
+        this.message = await channel.send(message);
+        return this.message; // Return the newly sent message
+    }
+
+    private async updateMessage(genMessage: MessageCreateOptions): Promise<void> {
         if (!this.message) {
             Logger.error(`Vote message is not set. Cannot update message.`);
             return;
         }
-        this.message.edit({ components: components }).catch(error => {
+        this.message.edit({ content: genMessage.content, components: genMessage.components}).catch(error => {
             Logger.error(`Failed to update vote message: ${error.message}`)
         });
     }
 
     private async executeSuccessfulVote(): Promise<void> {
         if (EnvConfig.isDevMode) {
-            Logger.log(`Remove roles disabled due to developer mode`)
+            Logger.log(`Remove roles disabled due to developer mode`);
+            return; // Do not remove roles in dev mode
         }
 
         await this.target.roles.set([]);

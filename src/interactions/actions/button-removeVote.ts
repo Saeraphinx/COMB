@@ -33,8 +33,8 @@ const action: IAction = {
                 flags: [MessageFlags.Ephemeral]
             });
         } else {
-            Logger.warn(`${instigator.user.username} (${instigator.id}) attempted to remove a vote while no vote is active.`);
-            return rejectInstigator(interaction, "There was an error while trying to remove your vote. Please try again later.");
+            Logger.log(`${instigator.user.username} (${instigator.id}) does not have a vote to remove.`);
+            return rejectInstigator(interaction, "You do not have a vote to remove.");
         }
     }
 };
