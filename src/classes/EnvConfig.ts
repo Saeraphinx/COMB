@@ -14,7 +14,6 @@ const DEFAULT_CONFIG = {
             roleId: `0`, // role ID for the weight
             weight: 0 // weight of votes made by members of the role id
         }],
-        voteChannelId: `0`, // channel ID where votes are posted
         guildId: `0`, // guild ID for the bot to operate in
         additionalGuilds: [`0`]
     },
@@ -61,7 +60,6 @@ export class EnvConfig {
         this.settings.roleWeights.sort((a, b) => {
             return b.weight - a.weight; // sort by weight in descending order
         })
-        this.settings.voteChannelId = process.env.VOTE_CHANNEL_ID || DEFAULT_CONFIG.settings.voteChannelId;
         this.settings.guildId = process.env.GUILD_ID || DEFAULT_CONFIG.settings.guildId;
         this.settings.additionalGuilds = process.env.ADDITIONAL_GUILDS?.split(`,`) || []
         this.bot.token = process.env.BOT_TOKEN || DEFAULT_CONFIG.bot.token;

@@ -1,0 +1,5 @@
+# COMB (**CO**ntingency **M**anagement **B**ot)
+COMB is a Discord bot designed to allow a staff team to remove roles from other staff members of equal or higher rank in the event of incident that would require such an action. COMB is expected to have the highest role & the `Manage Roles` permission in the server it is running in, and will not function properly if it does not have these permissions. Due to the nature of the servers that COMB could be deployed to, COMB is designed to work off of a database as opposed to live Discord data. This database is not automatically populated, and must be initialized and updated using the commands provided in the bot.
+
+### Configuration
+COMB is configured using environment variables. You can find all of the available environment variables & their defaults in the [`.env.example`](https://github.com/Saeraphinx/COMB/blob/main/default.env) file.

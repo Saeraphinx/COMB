@@ -14,6 +14,7 @@ const action: IAction = {
         }
         const customId = JSON.parse(interaction.customId) as CustomID; // already validated in Action.ts
         const voteOnUserId = customId.cD.id;
+        const channelId = customId.cD.chid;
         let instigator = interaction.member;
         if (!instigator) {
             return rejectInstigator(interaction, "You must be a member of this guild to start a vote.");
@@ -26,8 +27,8 @@ const action: IAction = {
             }
         }
 
-        if (!voteOnUserId|| typeof voteOnUserId !== "string") {
-            return rejectInstigator(interaction, "Invalid user ID provided for voting.");
+        if (!voteOnUserId|| typeof voteOnUserId !== "string" || !channelId || typeof channelId !== "string") {
+            return rejectInstigator(interaction, "Invalid user ID or channel ID provided for voting.");
         }
 
         const voteOnUser = await interaction.guild?.members.fetch(voteOnUserId);
@@ -46,7 +47,7 @@ const action: IAction = {
         }
 
         try {
-            let voteManager = new VoteManager(instigator, voteOnUser);
+            let voteManager = new VoteManager(instigator, voteOnUser, channelId);
             interaction.reply({
                 content: `Vote started successfully! The vote will last for ${EnvConfig.settings.timeout / 1000} seconds.`,
                 flags: [MessageFlags.Ephemeral]

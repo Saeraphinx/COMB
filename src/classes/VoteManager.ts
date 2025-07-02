@@ -1,21 +1,20 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ColorResolvable, Colors, ContainerBuilder, GuildMember, Message, MessageActionRowComponentBuilder, MessageCreateOptions, MessageFlags, MessagePayload, SectionBuilder, SeparatorBuilder, SeparatorSpacingSize, TextDisplayBuilder, User } from "discord.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ColorResolvable, Colors, ContainerBuilder, GuildMember, Message, MessageActionRowComponentBuilder, MessageCreateOptions, MessageFlags, Role, SectionBuilder, SendableChannels, SeparatorBuilder, SeparatorSpacingSize, TextDisplayBuilder, User } from "discord.js";
 import { EnvConfig } from "./EnvConfig.ts";
-import { create } from "domain";
 import { DatabaseManager } from "./Database.ts";
 import { Op } from "sequelize";
 import { Logger } from "./Logger.ts";
 import crypto from "node:crypto";
 import { Luma } from "./Luma.ts";
-import { stat } from "node:fs";
 import ms from "ms";
 
 export class VoteManager {
     private static _instance: VoteManager | null = null;
     public instigator: GuildMember;
     public target: GuildMember;
-    public rolesStrings: string[]; // Roles to remove from the target if the vote passes. Not to be used when removing roles.
+    public roles: Role[]; // Roles to remove from the target if the vote passes. Not to be used when removing roles.
     public votes: Map<string, number>; // Map of user IDs to their vote data
-    public message: Message | null; // Message to update with vote results
+    public message: Message | undefined; // Message to update with vote results
+    public channel: SendableChannels | undefined; // Channel where the vote is sent, can be used to send messages
     public expiry: Date; // Expiry date for the vote
     public pingString: string; // String to ping the instigator and target in the vote message
     public pingIds: string[]; // Array of user IDs to ping in the vote message
@@ -30,7 +29,7 @@ export class VoteManager {
         return VoteManager._instance;
     }
 
-    constructor(instigator: GuildMember, target: GuildMember) {
+    constructor(instigator: GuildMember, target: GuildMember, channelId: string) {
         if (VoteManager._instance) {
             throw new Error("VoteManager instance already exists. Use getInstance() instead.");
         }
@@ -39,11 +38,14 @@ export class VoteManager {
         this.votes = new Map<string, number>();
         this.expiry = new Date(Date.now() + EnvConfig.settings.timeout); // Set expiry based on configuration
         this._voteId = crypto.randomBytes(8).toString("base64url");
-        this.rolesStrings = target.roles.cache.filter(role => !role.managed && role.name !== `@everyone`).map(role => `${role.name} (${role.id})`);
+        this.roles = target.roles.cache.filter(role => !role.managed && role.name !== `@everyone`).map(role => role);
         this.pingString = `Unset`;
         this.pingIds = [this.instigator.id]; // Ping instigator and target by default
-        this.message = null;
-        this.sendMessage();
+        let channel = Luma.instance.channels.cache.get(channelId); // Fetch the channel where the vote will be sent if it exists in the cache
+        if (channel && channel.isSendable()) {
+            this.channel = channel;
+        }
+        this.sendMessage(channelId);
         VoteManager._instance = this; // Set the static instance to the current instance
         this._updateInterval = setInterval(() => {
             this.update().catch(error => {
@@ -62,30 +64,38 @@ export class VoteManager {
 
     public async update(handleVotes = true, updateMessage = true): Promise<{ passed: boolean; failed: boolean; }> {
         let totalWeightedVotes = this.voteScore;
-        let response = {passed: false, failed: false};
+        let response = { passed: false, failed: false };
 
         //vote passes
         if (totalWeightedVotes >= EnvConfig.settings.requiredVotes) {
-            response = {passed: true, failed: false};
+            response = { passed: true, failed: false };
             Logger.info(`Vote passed with ${totalWeightedVotes} votes.`);
             if (handleVotes) {
                 await this.executeSuccessfulVote().catch(error => {
                     Logger.error(`Failed to handle successful vote: ${error.message}`);
                 });
             }
+            if (updateMessage) {
+                await this.updateMessage(await this.generateMessage(response)).catch(error => {
+                    Logger.error(`Failed to update vote message: ${error.message}`);
+                });
+            }
+            VoteManager.clearActiveVote();
+            return response; // Vote passed, return early
         }
 
         //vote fails
         if (Date.now() > this.expiry.getTime()) {
-            response = {passed: false, failed: true};
+            response = { passed: false, failed: true };
             await this.updateMessage(await this.generateMessage(response)).catch(error => {
                 Logger.error(`Failed to update vote message: ${error.message}`);
             });
             VoteManager.clearActiveVote();
+            return response; // Vote failed, return early
         }
 
         if (updateMessage) {
-            await this.updateMessage(await this.generateMessage({...response, cancelled: false}));
+            await this.updateMessage(await this.generateMessage({ ...response, cancelled: false }));
         }
 
         return response;
@@ -111,12 +121,13 @@ export class VoteManager {
     }
 
     public removeVote(user: User): boolean {
+        let existed = false;
         if (this.votes.has(user.id)) {
             this.votes.delete(user.id);
-            return true; // Vote removed successfully
+            existed = true;
         }
         this.update();
-        return false; // User has not voted
+        return existed; // User has not voted
     }
 
     public async cancelVote(): Promise<void> {
@@ -133,18 +144,21 @@ export class VoteManager {
 
     // #region private thingies
     private async generateMessage(o: {
-        passed: boolean, 
+        passed: boolean,
         failed: boolean,
         cancelled?: boolean
     } = {
-        passed: false,
-        failed: false,
-        cancelled: false
-    }) : Promise<MessageCreateOptions> {
+            passed: false,
+            failed: false,
+            cancelled: false
+        }): Promise<MessageCreateOptions> {
+        this.channel?.sendTyping(); // Indicate that the bot is typing in the channel
+        let isFinished = o.passed || o.failed || o.cancelled;
         await DatabaseManager.instance.Users.findAll({
             where: {
-                userId: { [Op.ne]: this.instigator.id }
-            }}
+                userId: { [Op.ne]: this.target.id }
+            }
+        }
         ).then(users => {
             this.pingString = users.map(user => `<@${user.userId}>`).join(``);
             this.pingIds = users.map(user => user.userId);
@@ -158,8 +172,10 @@ export class VoteManager {
             .map(([userId, weight]) => `- **<@${userId}>** - ${weight}`)
             .join(`\n`);
 
+        voteString = `### Total Weighted Votes: ${this.voteScore} / ${EnvConfig.settings.requiredVotes}\n\n` + voteString;
+
         // change this to use the built in colors
-        let color:ColorResolvable = Colors.DarkOrange; // Default color for the vote message
+        let color: ColorResolvable = Colors.DarkOrange; // Default color for the vote message
         if (o.passed) {
             color = Colors.Green; // Green color for passed votes
         } else if (o.failed) {
@@ -168,21 +184,22 @@ export class VoteManager {
             color = Colors.Grey; // Grey color for cancelled votes
         }
 
-        let mainMessage = `<@${this.instigator.id}> (${this.instigator.user.username}) has begun a vote to remove <@${this.target.id}> (${this.target.user.username})'s roles.\n\nThe roles removed would be:\n${this.rolesStrings.join(`, `)}`;
+        let mainMessage = `<@${this.instigator.id}> (${this.instigator.user.username}) has begun a vote to remove <@${this.target.id}> (${this.target.user.username})'s roles.\n\nThe roles removed would be:\n${this.roles.map(role => `<@&${role.id}> (${role.name} - ${role.id})`).join(`, `)}`;
         if (o.passed) {
-            mainMessage += `\n\nThe vote has passed with ${this.votes.size} votes.`;
+            voteString += `\n\n**The vote has passed with ${this.votes.size} votes.**`;
         } else if (o.failed) {
-            mainMessage += `\n\nThe vote has failed.`;
+            voteString += `\n\n**The vote has failed.**`;
         } else if (o.cancelled) {
-            mainMessage += `\n\nThe vote has been cancelled.`;
+            voteString += `\n\n**The vote has been cancelled.**`;
         }
 
+        let tinyinfo = ``
         if (EnvConfig.isTestMode) {
-            mainMessage += `\n\n-# COMB is currently operating in test mode.`
+            tinyinfo += `\n-# COMB is currently operating in test mode.`
         }
 
         if (EnvConfig.isDevMode) {
-            mainMessage += `\n\n-# COMB is currently operating in dev mode.`
+            tinyinfo += `\n-# COMB is currently operating in dev mode.`
         }
 
         const components = [
@@ -200,7 +217,7 @@ export class VoteManager {
                                     cD: {
                                         id: this._voteId
                                     }
-                                })).setDisabled(o.passed || o.failed || o.cancelled)
+                                })).setDisabled(isFinished)
                         )
                         .addTextDisplayComponents(
                             new TextDisplayBuilder().setContent(`# Emergency Vote`),
@@ -231,7 +248,7 @@ export class VoteManager {
                                         id: this._voteId
                                     }
                                 }))
-                                .setDisabled(o.passed || o.failed || o.cancelled),
+                                .setDisabled(isFinished),
                             new ButtonBuilder()
                                 .setStyle(ButtonStyle.Secondary)
                                 .setLabel(`Remove Vote`)
@@ -242,28 +259,34 @@ export class VoteManager {
                                         id: this._voteId
                                     }
                                 }))
-                                .setDisabled(o.passed || o.failed || o.cancelled),
+                                .setDisabled(isFinished),
                         ),
-                ),
+                ).addTextDisplayComponents(
+                    new TextDisplayBuilder().setContent(`-# This vote ${isFinished ? `expired` : `will expire`} at <t:${Math.floor(this.expiry.getTime() / 1000)}:f>. ID: ${this._voteId}${tinyinfo}`),
+                )
         ];
-        return { components: components, allowedMentions: { roles: [], users: [] }, flags: [MessageFlags.IsComponentsV2]};
+        return { components: components, allowedMentions: { roles: [], users: [] }, flags: [MessageFlags.IsComponentsV2] };
     }
 
-    private async sendMessage(): Promise<Message> {
+    private async sendMessage(channelId: string): Promise<Message> {
         if (this.message) {
             Logger.warn(`Vote message already exists. Not sending a new one.`);
             return this.message; // If the message already exists, return it
         }
 
-        const channel = await Luma.instance.channels.fetch(EnvConfig.settings.voteChannelId);
-        if (!channel || !channel.isSendable()) {
-            throw new Error(`Vote channel not found or is not a text channel.`);
+        if (!this.channel) {
+            let channel = await Luma.instance.channels.fetch(channelId);
+            if (!channel || !channel.isSendable()) {
+                Logger.error(`Vote channel not found or is not a text channel.`);
+                throw new Error(`Vote channel not found or is not a text channel.`);
+            }
+            this.channel = channel;
         }
-        channel.sendTyping(); // Indicate that the bot is typing
+        this.channel.sendTyping(); // Indicate that the bot is typing in the channel
         let message = await this.generateMessage();
-        await channel.send({ content: this.pingString });
-        this.message = await channel.send(message);
-        return this.message; // Return the newly sent message
+        await this.channel.send({ content: this.pingString });
+        this.message = await this.channel.send(message);
+        return await this.message; // Send the message and return it
     }
 
     private async updateMessage(genMessage: MessageCreateOptions): Promise<void> {
@@ -271,7 +294,7 @@ export class VoteManager {
             Logger.error(`Vote message is not set. Cannot update message.`);
             return;
         }
-        this.message.edit({ content: genMessage.content, components: genMessage.components}).catch(error => {
+        this.message.edit({ components: genMessage.components, allowedMentions: genMessage.allowedMentions }).catch(error => {
             Logger.error(`Failed to update vote message: ${error.message}`)
         });
     }
@@ -282,9 +305,22 @@ export class VoteManager {
             return; // Do not remove roles in dev mode
         }
 
-        await this.target.roles.set([]);
-        Logger.log(`Removed roles from ${this.target.id}`)
+        this.channel?.sendTyping();
+        this.target.roles.set([]).then(() => {
+            Logger.log(`Removed roles from ${this.target.user.username} (${this.target.id})`);
+            this.channel?.send({
+                content: `Successfully removed roles from ${this.target.user.username} (${this.target.id}).`,
+            });
+        }).catch(error => {
+            Logger.error(`Failed to remove roles from ${this.target.user.username} (${this.target.id}): ${error.message}`);
+            this.channel?.send({
+                content: `Failed to remove roles from ${this.target.user.username} (${this.target.id}). Please check the logs for more details.`,
+            });
+        });
         for (let additionalGuild of EnvConfig.settings.additionalGuilds) {
+            if (additionalGuild == "" || additionalGuild == "0") {
+                continue; // Skip empty or invalid guild IDs
+            }
             await Luma.instance.guilds.fetch(additionalGuild).then(async guild => {
                 await guild.members.fetch(this.target.id).then(async member => {
                     Logger.log(`Removing roles from additional server ${guild.name} (${guild.id})`);
@@ -298,6 +334,7 @@ export class VoteManager {
     private static clearActiveVote() {
         if (VoteManager._instance) {
             Logger.info(`Clearing VoteManager instance for vote ID: ${VoteManager._instance.voteId}`);
+            VoteManager._instance._updateInterval && clearInterval(VoteManager._instance._updateInterval);
             VoteManager._instance = null; // Clear the instance after handling the vote
         } else {
             Logger.warn(`No active VoteManager instance to clear.`);
@@ -305,3 +342,29 @@ export class VoteManager {
     }
     // #endregion
 }
+
+/*
+let botHighestRole = this.target.guild.members.me?.roles.highest;
+        if (!botHighestRole) {
+            Logger.error(`Bot's highest role not found. Cannot remove roles from target.`);
+            return; // Bot's highest role not found, cannot proceed
+        }
+        this.target.roles.cache.forEach(async role => {
+            if (role.comparePositionTo(botHighestRole) > 0) {
+                Logger.warn(`Cannot remove role ${role.name} (${role.id}) from ${this.target.user.username} (${this.target.id}) because it is higher than or equal to the bot's highest role.`);
+                return;
+            }
+            if (role.managed) {
+                Logger.warn(`Will not remove managed role ${role.name} (${role.id}) from ${this.target.user.username} (${this.target.id}).`);
+                return; // Skip managed roles
+            }
+            if (role.name === `@everyone`) {
+                Logger.warn(`Will not remove @everyone role from ${this.target.user.username} (${this.target.id}).`);
+                return; // Skip @everyone role
+            }
+            Logger.log(`Removing role ${role.name} (${role.id}) from ${this.target.user.username} (${this.target.id})`);
+            await this.target.roles.remove(role).catch(error => {
+                Logger.error(`Failed to remove role ${role.name} (${role.id}) from ${this.target.user.username} (${this.target.id}): ${error.message}`);
+            });
+        });
+        */

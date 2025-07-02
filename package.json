@@ -7,7 +7,7 @@
     "dev": "yarn build && yarn start:env"
   },
   "dependencies": {
-    "discord.js": "^14.19.3",
+    "discord.js": "^14.21.0",
     "ms": "^2.1.3",
     "pg": "^8.16.3",
     "sequelize": "^6.37.7",

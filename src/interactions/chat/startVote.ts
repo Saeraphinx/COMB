@@ -21,7 +21,13 @@ const command: ICommand = {
     commandData: commandData.toJSON(),
     run: async (interaction) => {
         let user = interaction.options.getUser("user", true);
-
+        if (interaction.guild?.id !== EnvConfig.settings.guildId) {
+            interaction.reply({
+                content: "This command can only be used in the configured guild.",
+                flags: [MessageFlags.Ephemeral]
+            });
+            return;
+        }
         let member = await interaction.guild?.members.fetch(user.id).catch(() => null);
         if (!member) {
             interaction.reply({
@@ -45,6 +51,7 @@ const command: ICommand = {
                 n: "startVote",
                 cD: {
                     id: user.id,
+                    chid: interaction.channelId,
                 }
             }))
             .setTitle('Start Vote')
